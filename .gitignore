@@ -1,0 +1,23 @@
+# Python & env
+.venv/
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+
+# yt-dlp archive/state
+.downloaded.txt
+
+# Temp artifacts
+.tmp_*
+*.tmp
+*.mp4
+videos.csv
+
+# Editor/IDE
+.vscode/
+.idea/
