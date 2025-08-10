@@ -178,7 +178,8 @@ def main():
     if args.dry_run:
         return
 
-    out_dir = args.out_dir or sanitize_filename(course_title)
+    # Default to caller's current working directory to store videos
+    out_dir = args.out_dir or os.path.join(os.getcwd(), sanitize_filename(course_title))
     os.makedirs(out_dir, exist_ok=True)
 
     print(f"\n[下载目录] {out_dir}\n")
