@@ -1,3 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-uv run python download_course.py "$@"
+# Run from any working directory
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+uv run --project "$SCRIPT_DIR" python "$SCRIPT_DIR/download_course.py" "$@"
