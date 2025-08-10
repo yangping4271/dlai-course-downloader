@@ -60,7 +60,7 @@ def get_outline(course_slug: str) -> Tuple[str, List[Dict[str, Any]]]:
 def extract_direct_url(lesson_url: str) -> str:
     # Use yt-dlp to resolve actual media URL via Chrome cookies without downloading
     cmd = [
-        "yt-dlp",
+        sys.executable, "-m", "yt_dlp",
         "--cookies-from-browser", "chrome",
         "-g",
         "-f", "bv*+ba/b",

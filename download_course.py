@@ -130,7 +130,7 @@ def run_yt_dlp_download(lesson: Lesson, output_dir: str, threads: int = 8, prefe
     filename_template = os.path.join(output_dir, f"{lesson.index:02d} - {safe_title}.%(ext)s")
 
     cmd = [
-        "yt-dlp",
+        sys.executable, "-m", "yt_dlp",
         "--cookies-from-browser", "chrome",
         "--download-archive", os.path.join(output_dir, ".downloaded.txt"),
         "--no-overwrites",

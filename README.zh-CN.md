@@ -6,9 +6,9 @@
 
 ## 先决条件
 - 本机 Chrome 已登录且可正常播放目标课程视频
-- 已安装 uv 与 yt-dlp
+- 已安装 uv
   ```bash
-  brew install uv yt-dlp
+  brew install uv
   ```
 
 ## 你会得到
@@ -58,7 +58,7 @@
 
 ## 注意与排查
 - 确保 Chrome 已登录并能直接播放对应课时
-- 解析失败可尝试更新 yt-dlp：`yt-dlp -U`
+- 解析失败可尝试运行 `uv run --with yt-dlp -- python -m yt_dlp -U` 来更新 yt-dlp
 - 中断后可直接重试；凭归档文件避免重复下载
 - 若使用非默认 Chrome Profile，确保登录态在默认 Profile 上（或参考 yt-dlp 文档指定）
 

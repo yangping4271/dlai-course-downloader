@@ -6,9 +6,9 @@ For a Chinese guide, see: [README.zh-CN.md](README.zh-CN.md)
 
 ## Requirements
 - Chrome is logged in and can play the target course videos
-- uv and yt-dlp are installed
+- uv is installed
   ```bash
-  brew install uv yt-dlp
+  brew install uv
   ```
 
 ## What you get
@@ -58,9 +58,9 @@ Optional verification:
 
 ## Notes and troubleshooting
 - Ensure Chrome is logged in and can play the lesson in a normal browser tab
-- Update yt-dlp if extraction fails: `yt-dlp -U`
+- If extraction fails, try running `uv run --with yt-dlp -- python -m yt_dlp -U` to update yt-dlp
 - Re-run the same command to resume interrupted downloads; the archive file prevents re-downloading completed items
-- If you use a non-default Chrome profile, make sure the logged-in profile is the default one used by `yt-dlp --cookies-from-browser chrome`
+- If you use a non-default Chrome profile, make sure the logged-in profile is the default one used by yt-dlp's `--cookies-from-browser chrome`
 
 ## Usage notice
 - This project is for personal learning and research only
