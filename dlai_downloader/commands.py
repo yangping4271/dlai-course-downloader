@@ -111,10 +111,17 @@ def export_csv_main():
         # 判断URL类型
         is_specialization = is_specialization_url(args.url)
 
+        # 初始化输出文件名
+        output_file = args.out
+
         if is_specialization:
             # 处理专项课程
             specialization_slug = get_specialization_slug(args.url)
             specialization_title, lessons = get_specialization_outline_for_csv(specialization_slug)
+
+            # 如果用户未指定输出文件名，使用课程名称
+            if args.out == "videos.csv":
+                output_file = f"{sanitize_filename(specialization_title)}.csv"
 
             logger.info(f"[专项课程] {specialization_title}")
             logger.info(f"[视频课时总数] {len(lessons)}")
@@ -160,12 +167,18 @@ def export_csv_main():
             course_slug = get_course_slug(args.url)
             course_title, lessons = get_outline_for_csv(course_slug)
 
+            # 如果用户未指定输出文件名，使用课程名称
+            if args.out == "videos.csv":
+                output_file = f"{sanitize_filename(course_title)}.csv"
+
             logger.info(f"[课程] {course_title}")
             logger.info(f"[视频课时数] {len(lessons)}")
 
             rows: List[Dict[str, str]] = []
             processed_count = 0
             success_count = 0
+            exec_path = os.getcwd()
+            course_path = os.path.join(exec_path, sanitize_filename(course_title))
 
             for obj in sorted(lessons, key=lambda o: int(o.get("index") or 0)):
                 processed_count += 1
@@ -185,6 +198,7 @@ def export_csv_main():
                     rows.append({
                         "url": direct_url,
                         "title": f"{idx:02d} - {name}",
+                        "path": course_path
                     })
                     success_count += 1
                     logger.info(f"[成功] {idx:02d} - {name}")
@@ -197,7 +211,7 @@ def export_csv_main():
         # 写入CSV文件
         try:
             exec_path = os.getcwd()
-            with open(args.out, "w", newline="", encoding="utf-8") as f:
+            with open(output_file, "w", newline="", encoding="utf-8") as f:
                 writer = csv.DictWriter(f, fieldnames=["url", "title", "path"])
                 writer.writeheader()
                 for r in rows:
@@ -206,7 +220,7 @@ def export_csv_main():
                         r["path"] = exec_path
                     writer.writerow({"url": r["url"], "title": r["title"], "path": r["path"]})
 
-            logger.info(f"导出完成: {success_count}/{processed_count} 个课时已导出到 {args.out}")
+            logger.info(f"导出完成: {success_count}/{processed_count} 个课时已导出到 {output_file}")
 
         except IOError as e:
             logger.error(f"写入CSV文件失败: {e}")
