@@ -52,6 +52,26 @@ def slugify(text: str) -> str:
     return text or "lesson"
 
 
+def is_specialization_url(url: str) -> bool:
+    """判断URL是否为专项课程URL"""
+    parsed = urlparse(url)
+    parts = [p for p in parsed.path.split('/') if p]
+    return len(parts) >= 2 and parts[0] == 'specializations'
+
+
+def get_specialization_slug(url: str) -> str:
+    """从专项课程URL中提取slug"""
+    parsed = urlparse(url)
+    if parsed.netloc != COURSE_HOST:
+        raise ValueError(f"URL host must be {COURSE_HOST}")
+
+    parts = [p for p in parsed.path.split('/') if p]
+    if len(parts) < 2 or parts[0] != 'specializations':
+        raise ValueError("Not a recognized specialization URL under /specializations/<slug>")
+
+    return parts[1]
+
+
 def get_course_base_url(input_url: str) -> Tuple[str, str]:
     """从任意课程课时URL获取课程基础URL和课程slug"""
     parsed = urlparse(input_url)
@@ -95,6 +115,13 @@ def _build_api_url(course_slug: str) -> str:
     return f"https://{COURSE_HOST}/api/trpc/course.getCourseBySlug?input={encoded_params}"
 
 
+def _build_specialization_api_url(specialization_slug: str) -> str:
+    """构建专项课程API URL"""
+    api_params = json.dumps({"json": {"specializationSlug": specialization_slug}})
+    encoded_params = quote(api_params, safe='')
+    return f"https://{COURSE_HOST}/api/trpc/course.getSpecialization?input={encoded_params}"
+
+
 def fetch_course_data(course_slug: str) -> Tuple[str, List[Dict[str, Any]], List[str]]:
     """统一的课程数据获取函数
 
@@ -127,6 +154,46 @@ def fetch_course_data(course_slug: str) -> Tuple[str, List[Dict[str, Any]], List
         raise RuntimeError(f"API请求失败: {e}")
     except json.JSONDecodeError as e:
         raise RuntimeError(f"API响应解析失败: {e}")
+
+
+def fetch_specialization_data(specialization_slug: str) -> Tuple[str, List[Dict[str, Any]]]:
+    """获取专项课程数据
+
+    Returns:
+        Tuple: (specialization_title, courses_list)
+        courses_list 中每个元素包含: {"name": str, "slug": str, "lessons": Dict}
+    """
+    session = build_session_with_chrome_cookies()
+    api_url = _build_specialization_api_url(specialization_slug)
+
+    try:
+        resp = session.get(api_url, timeout=REQUEST_TIMEOUT)
+        resp.raise_for_status()
+        data: Dict[str, Any] = resp.json()
+        json_obj = data.get("result", {}).get("data", {}).get("json", {})
+
+        specialization_title: str = json_obj.get("name") or specialization_slug
+        courses_raw: List[Dict[str, Any]] = json_obj.get("courses", [])
+
+        # 提取课程信息
+        courses_list: List[Dict[str, Any]] = []
+        for course in courses_raw:
+            course_name = course.get("name", "")
+            course_slug = course.get("slug", "")
+            lessons_map = course.get("lessons", {})
+            courses_list.append({
+                "name": course_name,
+                "slug": course_slug,
+                "lessons": lessons_map
+            })
+
+        return specialization_title, courses_list
+
+    except requests.exceptions.RequestException as e:
+        raise RuntimeError(f"专项课程API请求失败: {e}")
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"专项课程API响应解析失败: {e}")
+
 
 
 def fetch_course_outline_via_api(course_slug: str) -> Tuple[str, List[Lesson]]:
@@ -187,6 +254,41 @@ def get_outline_for_csv(course_slug: str) -> Tuple[str, List[Dict[str, Any]]]:
     return course_title, lessons
 
 
+def get_specialization_outline_for_csv(specialization_slug: str) -> Tuple[str, List[Dict[str, Any]]]:
+    """为CSV导出获取专项课程大纲
+
+    Returns:
+        Tuple: (specialization_title, lessons_list)
+        lessons_list中每个元素包含课时信息，并额外添加course_name、course_slug和course_index字段
+    """
+    specialization_title, courses = fetch_specialization_data(specialization_slug)
+
+    def is_video(obj: Dict[str, Any]) -> bool:
+        return (obj.get("type") or "").lower() == "video"
+
+    all_lessons: List[Dict[str, Any]] = []
+
+    for course_index, course in enumerate(courses):
+        course_name = course["name"]
+        course_slug = course["slug"]
+        lessons_map = course["lessons"]
+
+        # 按index排序并筛选视频课时
+        video_lessons = []
+        for _, obj in sorted(lessons_map.items(), key=lambda kv: int((kv[1] or {}).get("index") or 0)):
+            if obj and is_video(obj):
+                # 复制对象并添加课程信息
+                lesson_with_course = obj.copy()
+                lesson_with_course["course_name"] = course_name
+                lesson_with_course["course_slug"] = course_slug
+                lesson_with_course["course_index"] = course_index
+                video_lessons.append(lesson_with_course)
+
+        all_lessons.extend(video_lessons)
+
+    return specialization_title, all_lessons
+
+
 def extract_direct_url(lesson_url: str) -> str:
     """使用yt-dlp解析实际媒体URL"""
     cmd = [
@@ -225,6 +327,21 @@ def build_lesson_url(course_slug: str, lesson_obj: Dict[str, Any]) -> Tuple[int,
     name_slug = quote(name.lower().replace(" ", "-").replace("/", "-"))
     url = f"https://{COURSE_HOST}/courses/{course_slug}/lesson/{lesson_slug}/{name_slug}"
     return idx, name, url
+
+
+def build_specialization_lesson_url(specialization_slug: str, lesson_obj: Dict[str, Any]) -> Tuple[int, str, str, str]:
+    """构建专项课程课时查看URL
+
+    Returns:
+        Tuple: (idx, name, url, course_name)
+    """
+    idx = int(lesson_obj.get("index") or 0)
+    name = str(lesson_obj.get("name") or f"Lesson {idx}")
+    lesson_slug = str(lesson_obj.get("slug") or idx)
+    course_name = str(lesson_obj.get("course_name", "Unknown Course"))
+    name_slug = quote(name.lower().replace(" ", "-").replace("/", "-"))
+    url = f"https://{COURSE_HOST}/specializations/{specialization_slug}/lesson/{lesson_slug}/{name_slug}"
+    return idx, name, url, course_name
 
 
 def run_yt_dlp_download(lesson: Lesson, output_dir: str, threads: int = DEFAULT_THREADS, prefer: str = DEFAULT_QUALITY) -> int:

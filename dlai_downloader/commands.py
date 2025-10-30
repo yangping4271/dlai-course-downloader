@@ -13,8 +13,12 @@ from .core import (
     get_course_slug,
     fetch_course_outline_via_api,
     get_outline_for_csv,
+    get_specialization_outline_for_csv,
+    is_specialization_url,
+    get_specialization_slug,
     extract_direct_url,
     build_lesson_url,
+    build_specialization_lesson_url,
     run_yt_dlp_download,
     sanitize_filename,
     DEFAULT_THREADS,
@@ -97,47 +101,98 @@ def download_main():
 def export_csv_main():
     """导出CSV清单命令的主函数"""
     parser = argparse.ArgumentParser(description="Export CSV of direct video URLs for a DLAI course (Chrome cookies required)")
-    parser.add_argument("url", help="Any lesson URL under the course, or the course homepage URL")
+    parser.add_argument("url", help="Any lesson URL under the course/specialization, or the course/specialization homepage URL")
     parser.add_argument("--out", default="videos.csv", help="Output CSV path (default: videos.csv)")
     parser.add_argument("--verify", action="store_true", help="Verify each URL with a HEAD request after resolving")
 
     args = parser.parse_args()
 
     try:
-        # 验证URL并获取课程信息
-        course_slug = get_course_slug(args.url)
-        course_title, lessons = get_outline_for_csv(course_slug)
+        # 判断URL类型
+        is_specialization = is_specialization_url(args.url)
 
-        rows: List[Dict[str, str]] = []
-        processed_count = 0
-        success_count = 0
+        if is_specialization:
+            # 处理专项课程
+            specialization_slug = get_specialization_slug(args.url)
+            specialization_title, lessons = get_specialization_outline_for_csv(specialization_slug)
 
-        for obj in sorted(lessons, key=lambda o: int(o.get("index") or 0)):
-            processed_count += 1
-            idx, name, view_url = build_lesson_url(course_slug, obj)
+            logger.info(f"[专项课程] {specialization_title}")
+            logger.info(f"[视频课时总数] {len(lessons)}")
 
-            try:
-                direct_url = extract_direct_url(view_url)
+            rows: List[Dict[str, str]] = []
+            processed_count = 0
+            success_count = 0
+            exec_path = os.getcwd()
 
-                # 验证URL（如果需要）
-                if args.verify:
-                    try:
-                        vr = requests.head(direct_url, allow_redirects=True, timeout=15)
-                        vr.raise_for_status()
-                    except requests.exceptions.RequestException:
-                        logger.warning(f"[警告] {idx:02d} - {name}: URL验证失败")
+            for obj in sorted(lessons, key=lambda o: (o.get("course_index", 0), int(o.get("index") or 0))):
+                processed_count += 1
+                idx, name, view_url, course_name = build_specialization_lesson_url(specialization_slug, obj)
 
-                rows.append({
-                    "url": direct_url,
-                    "title": f"{idx:02d} - {name}",
-                })
-                success_count += 1
-                logger.info(f"[成功] {idx:02d} - {name}")
+                # 为每个子课程创建独立的path
+                course_path = os.path.join(exec_path, sanitize_filename(course_name))
 
-            except RuntimeError as e:
-                logger.error(f"[跳过] {idx:02d} - {name}: {e}")
-            except Exception as e:
-                logger.error(f"[跳过] {idx:02d} - {name}: 未知错误 - {e}")
+                try:
+                    direct_url = extract_direct_url(view_url)
+
+                    # 验证URL（如果需要）
+                    if args.verify:
+                        try:
+                            vr = requests.head(direct_url, allow_redirects=True, timeout=15)
+                            vr.raise_for_status()
+                        except requests.exceptions.RequestException:
+                            logger.warning(f"[警告] [{course_name}] {idx:02d} - {name}: URL验证失败")
+
+                    rows.append({
+                        "url": direct_url,
+                        "title": f"{idx:02d} - {name}",
+                        "path": course_path
+                    })
+                    success_count += 1
+                    logger.info(f"[成功] [{course_name}] {idx:02d} - {name}")
+
+                except RuntimeError as e:
+                    logger.error(f"[跳过] [{course_name}] {idx:02d} - {name}: {e}")
+                except Exception as e:
+                    logger.error(f"[跳过] [{course_name}] {idx:02d} - {name}: 未知错误 - {e}")
+
+        else:
+            # 处理普通课程
+            course_slug = get_course_slug(args.url)
+            course_title, lessons = get_outline_for_csv(course_slug)
+
+            logger.info(f"[课程] {course_title}")
+            logger.info(f"[视频课时数] {len(lessons)}")
+
+            rows: List[Dict[str, str]] = []
+            processed_count = 0
+            success_count = 0
+
+            for obj in sorted(lessons, key=lambda o: int(o.get("index") or 0)):
+                processed_count += 1
+                idx, name, view_url = build_lesson_url(course_slug, obj)
+
+                try:
+                    direct_url = extract_direct_url(view_url)
+
+                    # 验证URL（如果需要）
+                    if args.verify:
+                        try:
+                            vr = requests.head(direct_url, allow_redirects=True, timeout=15)
+                            vr.raise_for_status()
+                        except requests.exceptions.RequestException:
+                            logger.warning(f"[警告] {idx:02d} - {name}: URL验证失败")
+
+                    rows.append({
+                        "url": direct_url,
+                        "title": f"{idx:02d} - {name}",
+                    })
+                    success_count += 1
+                    logger.info(f"[成功] {idx:02d} - {name}")
+
+                except RuntimeError as e:
+                    logger.error(f"[跳过] {idx:02d} - {name}: {e}")
+                except Exception as e:
+                    logger.error(f"[跳过] {idx:02d} - {name}: 未知错误 - {e}")
 
         # 写入CSV文件
         try:
@@ -146,7 +201,10 @@ def export_csv_main():
                 writer = csv.DictWriter(f, fieldnames=["url", "title", "path"])
                 writer.writeheader()
                 for r in rows:
-                    writer.writerow({"url": r["url"], "title": r["title"], "path": exec_path})
+                    # 确保所有行都有path字段
+                    if "path" not in r:
+                        r["path"] = exec_path
+                    writer.writerow({"url": r["url"], "title": r["title"], "path": r["path"]})
 
             logger.info(f"导出完成: {success_count}/{processed_count} 个课时已导出到 {args.out}")
 
